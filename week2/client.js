@@ -1,4 +1,5 @@
 const net = require('net');
+const parser = require('./parser.js');
 
 class Request {
     constructor (options) {
@@ -22,6 +23,13 @@ class Request {
         this.headers['Content-Length'] = this.bodyText.length;
     }
 
+    toString() {
+        return `${this.method} ${this.path} HTTP/1.1\r
+${Object.keys(this.headers).map(key => `${key}: ${this.headers[key]}`).join('\r\n')}\r
+\r
+${this.bodyText}`
+    }
+
     send(connection) {
         return new Promise((resolve, reject) => {
             const parser = new ResponseParser;
@@ -40,8 +48,8 @@ class Request {
                 parser.receive(data.toString());
                 if (parser.isFinished) {
                     resolve(parser.response);
-                    connection.end();
                 }
+                connection.end();
             });
 
             connection.on('error', (err) => {
@@ -50,13 +58,10 @@ class Request {
             })
         });
     }
+}
 
-    toString() {
-        return `${this.method} ${this.path} HTTP/1.1\r
-${Object.keys(this.headers).map(key => `${key}: ${this.headers[key]}`).join('\r\n')}\r
-\r
-${this.bodyText}`
-    }
+class Response {
+
 }
 
 class ResponseParser {
@@ -193,7 +198,7 @@ void async function () {
     let request = new Request({
         method: 'POST',
         host: '127.0.0.1',
-        port: '8000',
+        port: '8088',
         path: '/',
         headers: {
             ['X-Foo2']: 'customed'
@@ -205,5 +210,5 @@ void async function () {
 
     let response = await request.send();
 
-    console.log(response);
+    let dom = parser.parseHTML(response.body);
 }();
