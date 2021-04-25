@@ -6,10 +6,6 @@ let stack = [{type: 'document', children:[]}];
 
 function emit(token) {
     console.log(token);
-    if (token.type != 'text') {
-        return;
-    }
-
     let top = stack[stack.length - 1];
 
     if (token.type == 'startTag') {
@@ -31,7 +27,7 @@ function emit(token) {
         }
 
         top.children.push(element);
-        element.parent = top;
+        // element.parent = top;
 
         if (!token.isSelfClosing) {
             stack.push(element);
@@ -45,6 +41,15 @@ function emit(token) {
             stack.pop();
         }
         currentTextNode = null;
+    } else if (token.type == 'text') {
+        if (currentTextNode == null) {
+            currentTextNode = {
+                type: 'text',
+                content: ''
+            }
+            top.children.push(currentTextNode);
+        }
+        currentTextNode.content += token.content;
     }
 }
 
