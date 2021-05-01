@@ -1,8 +1,119 @@
+const css = require('css');
 const EOF = Symbol('EOF'); // EOF: End Of File
 
 let currentToken = null;
 let currentAttribute = null;
 let stack = [{type: 'document', children:[]}];
+let currentTextNode = null;
+
+let rules = [];
+function addCSSRules(text) {
+    let ast = css.parse(text);
+    rules.push(...ast.stylesheet.rules);
+}
+
+function match(element, selector) {
+    if (!elector || !element.attributes) {
+        return false;
+    }
+
+    if (selector.charAt(0) == '#') {
+        var attr = element.attributes.filter(attr => attr.name === 'id')[0];
+        if (attr && attr.value === selector.replace('#', '')) {
+            return true;
+        }
+    } else if (selector.charAt(0) == '.') {
+        var attr = element.attributes.filter(attr => attr.name === 'class')[0];
+        if (attr && attr.value === selector.replace('.', '')) {
+            return true;
+        } 
+    } else {
+        if (element.tagName == selector) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function specificity(selector) {
+    var p = [0, 0, 0, 0];
+    var selectorParts = selector.split(' ');
+    for (var part of selectorParts) {
+        if (part.charAt(0) == '#') {
+            p[1] += 1;
+        } else if (part.charAt(0) == '.') {
+            p[2] += 1;
+        } else {
+            p[3] += 1;
+        }
+    }
+    return p;
+}
+
+function compare(sp1, sp2) {
+    if (sp1[0] - sp2[0]) {
+        return sp1[0] - sp2[0];
+    }
+
+    if (sp1[1] - sp2[1]) {
+        return sp1[1] - sp2[1];
+    }
+
+    if (sp1[2] - sp2[2]) {
+        return sp1[2] - sp2[2];
+    }
+
+    return sp1[3] - sp2[3];
+}
+
+function computeCSS(element) {
+    console.log(rules, element);
+    let elements = stack.slice().reverse();
+
+    if (!element.computedStyle) {
+        element.computeCSS = {};
+    }
+
+    for (let rule of rules) {
+        let selectorParts = rule.selectors[0].split(' ').reverse();
+
+        if (!match(element, selectorParts[0])) {
+            continue;
+        }
+
+        let matched = false;
+
+        var j = 1;
+        for (let i = 0; i < elements.length; i++) {
+            if (match(elements[i], selectorParts[j])) {
+                j++;
+            }
+        }
+        if (j >= selectorParts.length) {
+            matched = true;
+        }
+        if (matched) {
+            // 匹配到
+            console.log('Element', element, 'matched rule', rule);
+            var sp = specificity(rule.selector[0]);
+            var computedStyle = element.computedStyle;
+            for(var declaration of rule.declarations) {
+                if (!computedStyle[declaration.property]) {
+                    computedStyle[declaration.property] = {};
+                    // computedStyle[declaration.property].value = declaration.value;
+                }
+                if (!computedStyle[declaration.property].specificity) {
+                    computedStyle[declaration.property].value = declaration.value;
+                    computedStyle[declaration.property].specificity = sp;
+                } else if (compare(computedStyle[declaration.property].specificity, sp) < 0) {
+                    computedStyle[declaration.property].value = declaration.value;
+                    computedStyle[declaration.property].specificity = sp;
+                }
+            }
+            console.log(element.computedStyle);
+        }
+    }
+}
 
 function emit(token) {
     console.log(token);
@@ -26,6 +137,8 @@ function emit(token) {
             }
         }
 
+        computeCSS(element);
+
         top.children.push(element);
         // element.parent = top;
 
@@ -38,6 +151,10 @@ function emit(token) {
         if (top.tagName != token.tagName) {
             throw new Error('Tag start end doesn\'t match !');
         } else {
+            // 遇到style标签时，添加css规则操作
+            if (top.tagName === 'style') {
+                addCSSRules(top.children[0].content);
+            }
             stack.pop();
         }
         currentTextNode = null;
@@ -110,7 +227,7 @@ function tagName(c) {
     } else if (c == '/') {
         return selfClosingStartTag;
     } else if (c.match(/^[a-zA-Z]$/)) {
-        currentToken.tagNName += c;
+        currentToken.tagName += c;
         return tagName;
     } else if (c == '>') {
         emit(currentToken);
@@ -161,7 +278,7 @@ function beforeAttributeValue(c) {
     } else if (c == '\'') {
         return singleQuotedAttributeValue;
     } else if (c == '>') {
-
+        return data;
     } else {
         return UnquotedAttributeValue(c);
     }
@@ -213,7 +330,7 @@ function afterQuotedAttributeValue(c) {
 }
 
 function UnquotedAttributeValue(c) {
-    if (c.match(/^[\t\nn\f ]$/)) {
+    if (c.match(/^[\t\n\f ]$/)) {
         currentToken[currentAttribute.name] = currentAttribute.value;
         return beforeAttributeName;
     } else if (c == '/') {
@@ -238,6 +355,7 @@ function UnquotedAttributeValue(c) {
 function selfClosingStartTag(c) {
     if (c == '>') {
         currentToken.isSelfClosing = true;
+        emit(currentToken);
         return data;
     } else if (c == 'EOF') {
 
@@ -275,4 +393,32 @@ module.exports.parseHTML = function parseHTML(html) {
         state = state(c);
     }
     state = state(EOF);
+    return stack[0];
 }
+
+let source = `<html maaa=a>
+<head>
+    <style>
+body div #myid{
+    width:100px;
+    background-color: #ff5000;
+}
+body div img{
+    width:30px;
+    background-color: #ff1111;
+}
+    </style>
+</head>
+<body>
+    <div>
+        <img id="myid"/>
+        <img />
+    </div>
+</body>
+</html>`;
+
+let state = data;
+for(let c of source) {
+    state = state(c);
+}
+state(EOF);
